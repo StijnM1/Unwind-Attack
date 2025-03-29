@@ -1,6 +1,6 @@
 # Unwind Attack for SBT cipher
 
-This repository contains an implementation of the Unwind Attack, as explained in my Master's Thesis. The attack concerns the Philips UA-8295 Short Burst Terminal, which was manufactured and marketed by Philips Usfa in the 1980s and contains an algorithm backdoored by the American National Security Agency. The attack exploits the weak interaction between so-called byte paths in the primtive of the UA-8295.
+This repository contains an implementation of the Unwind Attack, as explained in [my Master's Thesis](https://scripties.uba.uva.nl/search?id=record_55780). The attack concerns the Philips UA-8295 Short Burst Terminal, which was manufactured and marketed by Philips Usfa in the 1980s and contains an algorithm backdoored by the American National Security Agency. The attack exploits the weak interaction between so-called byte paths in the primtive of the UA-8295.
 ## Usage
 The following command line options are available
 

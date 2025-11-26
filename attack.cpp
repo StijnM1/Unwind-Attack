@@ -85,6 +85,15 @@ std::map<state_t, double> change_keymap(std::map<state_t, double> probs, state_t
     return probs;
 };
 
+bool contains(const std::vector<state_t>& vec, state_t state) {
+    for (int i = 0; i < vec.size(); ++i) {
+        if (vec[i] == state) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int hammingweight(int64_t vec)
 {
     int weight = 0;
@@ -137,13 +146,18 @@ bool valid_mitm(const state_t key, state_t BPmask) {
     state_t initial_output_state = original_output;
     OList.push_back(initial_output_state);
 
-    std::map<state_t, double> probs_fw;
-    std::map<state_t, double> probs_bw;
+    std::map<state_t, double> probs_fw_in;
+    std::map<state_t, double> probs_fw_out;
+    std::map<state_t, double> probs_bw_in;
+    std::map<state_t, double> probs_bw_out;
 
-    probs_bw[initial_output_state] = 1;
+    probs_fw_in.clear();
+    probs_fw_out.clear();
+    probs_bw_in.clear();
+    probs_bw_out.clear();
 
+    probs_bw_out[initial_output_state] = 1;
 
-    
 
     for (int round = 7; round > 3; --round) {
         std::cout << "Round " << round << std::endl;
@@ -152,84 +166,119 @@ bool valid_mitm(const state_t key, state_t BPmask) {
         // inverse S boxes
         IList.swap(OList);
         OList.clear();
+
+        probs_bw_in.swap(probs_bw_out);
+        probs_bw_out.clear();
+
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_bw_in[input];
             SBTopt::sbox_inv(input);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output.u64);
-            probs_bw = change_keymap(probs_bw, temp_input, output);
+            probs_bw_out[output] += input_prob;
         }
 
-        std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw.size() << std::endl;
-        std::cout << "same keys? " << mapeqlist(probs_bw, OList) << std::endl;
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw_out.size() << std::endl;
+        std::cout << "same keys? " << mapeqlist(probs_bw_out, OList) << std::endl;
 
 
-        printmap(probs_bw);
-        printvec(OList);
+        //printmap(probs_bw_out);
+        //printvec(OList);
+
         // inverse nibble switch
         IList.swap(OList);
         OList.clear();
+
+        probs_bw_in.swap(probs_bw_out);
+        probs_bw_out.clear();
+
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_bw_in[input];
             SBTopt::nibbleswitch_inv(input, control);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output.u64);
-            probs_bw = change_keymap(probs_bw, temp_input, output);
+            probs_bw_out[output] += input_prob;
         }
-        std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw.size() << std::endl;
-        std::cout << "same keys? " << mapeqlist(probs_bw, OList) << std::endl;
 
-        printmap(probs_bw);
-        printvec(OList);
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw_out.size() << std::endl;
+        std::cout << "same keys? " << mapeqlist(probs_bw_out, OList) << std::endl;
+
+        //printmap(probs_bw_out);
+        //printvec(OList);
 
         SBTopt::bytepermutation_inv(BPmask);
 
         // inverse byte permutation
         IList.swap(OList);
         OList.clear();
-        std::cout << IList.size() << std::endl;
+
+        probs_bw_in.swap(probs_bw_out);
+        probs_bw_out.clear();
+
+        //std::cout << IList.size() << std::endl;
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_bw_in[input];
             SBTopt::bytepermutation_inv(input);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output.u64);
-            probs_bw = change_keymap(probs_bw, temp_input, output);
+            probs_bw_out[output] += input_prob;
         }
-        //std::cout << "---After byte permutation---" << std::endl;
-        std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw.size() << std::endl;
-        std::cout << "same keys? " << mapeqlist(probs_bw, OList) << std::endl;
-
-
-        printmap(probs_bw);
-        printvec(OList);
-       
-        std::map<state_t, double> output_probs = probs_bw;
-        std::map<state_t, double> input_probs;
-        input_probs.clear();
-        //output_probs = probs_bw;
-
-        for (int n = 15; n >= 0; --n)       
+        
+        if (round == 2 || round == 4 || round == 6)
         {
-            std::cout << "nibble: " << n << std::endl;
+            // filter unique values every odd round
+            OHash.clear();
+            OHash.reserve(OList.size());
+            for (state_t val : OList)
+                OHash.emplace(val);
+            OList.clear();
+            for (state_t val : OHash)
+                OList.emplace_back(val);
+        }
+        
+        //std::cout << "---After byte permutation---" << std::endl;
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw_out.size() << std::endl;
+        std::cout << "same keys? " << mapeqlist(probs_bw_out, OList) << std::endl;
+
+        std::cout << "after byte perm" << std::endl;
+        printmap(probs_bw_out);
+        //printvec(OList);
+
+        if (round == 2 || round == 4 || round == 6)
+        {
+            // filter unique values every odd round
+            OHash.clear();
+            OHash.reserve(OList.size());
+            for (state_t val : OList)
+                OHash.emplace(val);
+            OList.clear();
+            for (state_t val : OHash)
+                OList.emplace_back(val);
+        }
+
+        for (int n = 15; n >= 0; --n)
+        {
+            //std::cout << "nibble: " << n << std::endl;
             int pos = n^1;
             if (BPmask.getnibble(pos) == 0) continue;
             
-            std::swap(input_probs, output_probs);
-            std::cout << "input size: " << input_probs.size() << " output size: " << output_probs.size() << std::endl;
-            output_probs.clear();
+            probs_bw_in.swap(probs_bw_out);
+            probs_bw_out.clear();
 
             IList.swap(OList);
             OList.clear();
+
+            std::vector<state_t> used;
+
             for (const state_t& input : IList){
-                auto temp_input = input;
                 state_t val = input;
                 /*for (const auto& [key, value] : probs) {
                     if (value == 0) { std::cout << key << "HERE" << std::endl; }
                 }*/
                 //auto temp_prob = probs_bw.find(temp_input)->second;
-                auto temp_prob = input_probs[temp_input];
+                auto input_prob = probs_bw_in[val];
                 //std::cout << "temp_prob: " << temp_prob << std::endl;
-                bool inpused = false;
+
                 //double temp_prob = 1;
                 //std::cout << input << std::endl;
 
@@ -241,7 +290,7 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 //OList.push_back(output);
 
                 if (extcrumbused == 0) {
-                    output_probs[output] += temp_prob;
+                    probs_bw_out[output] += input_prob;
                     OList.push_back(output);
                     //temp_probs = change_keymap(temp_probs, temp_input, output);
                     //std::cout << "continue" << std::endl;
@@ -249,7 +298,7 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 }
 
                 OList.push_back(output);
-                output_probs[output] += temp_prob / 4.;
+                probs_bw_out[output] += input_prob / 4.;
 
                 //probs_bw[output] += temp_prob/4;
                 //std::cout << "BP1 output_size: " << output_probs.size() << std::endl;
@@ -260,7 +309,7 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 output = val.u64 & BPmask.u64;
                 //std::cout << "output: " << output << std::endl;
                 OList.push_back(output);
-                output_probs[output] += temp_prob / 4.;
+                probs_bw_out[output] += input_prob / 4.;
 
 
                 //std::cout << "BP2 output_size: " << output_probs.size() << std::endl;
@@ -269,7 +318,7 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 output = val.u64 & BPmask.u64;
                 //std::cout << "output: " << output << std::endl;
                 OList.push_back(output);
-                output_probs[output] += temp_prob / 4.;
+                probs_bw_out[output] += input_prob / 4.;
 
 
                 //std::cout << "BP3 output_size: " << output_probs.size() << std::endl;
@@ -278,7 +327,7 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 output = val.u64 & BPmask.u64;
                // std::cout << "output: " << output << std::endl;
                 OList.push_back(output);
-                output_probs[output] += temp_prob / 4.;
+                probs_bw_out[output] += input_prob / 4.;
 
                 //std::cout << "BP4 output_size: " << output_probs.size() << std::endl;
 
@@ -288,13 +337,12 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                     printvec(OList);
                 }
                 std::cout << "OList size: " << OList.size() << std::endl;*/
-
+                //printmap(probs_bw_out);
                 }
-            /*std::cout << "nibble: " << n << std::endl;
-            std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw.size() << std::endl;
-            printmap(output_probs);
-            printvec(OList);*/
-
+            std::cout << "nibble: " << n << std::endl;
+            std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw_out.size() << std::endl;
+            printvec(OList);
+            printmap(probs_bw_out);
         }
 
         /*for (auto p : output_probs) {
@@ -304,22 +352,26 @@ bool valid_mitm(const state_t key, state_t BPmask) {
             else {
                 probs_bw[p.first] = p.second;
             }
-        
+
         }*/
 
         //printmap(output_probs);
 
-        std::swap(probs_bw, output_probs);
-        std::cout << "*****END OF ROUND*****" << std::endl;
-        std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw.size() << " or size output_probe" << output_probs.size()<< std::endl;
-        std::cout << "same keys? " << mapeqlist(probs_bw, OList) << std::endl;
+        //probs_bw_in.swap(probs_bw_out);
+        //probs_bw_out.clear();
+        //std::cout << "*****END OF ROUND*****" << std::endl;
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_bw_out.size() << std::endl;
+        //std::cout << "same keys? " << mapeqlist(probs_bw_out, OList) << std::endl;
 
-        printmap(probs_bw);
-        printvec(OList);
-        std::set<state_t> s(OList.begin(), OList.end());
-        OList.assign(s.begin(), s.end());
-        std::cout << "OList unique size: " << s.size() << std::endl;
+        //printmap(probs_bw_out);
+        //printvec(OList);
+        //std::set<state_t> s(OList.begin(), OList.end());
+        //OList.assign(s.begin(), s.end());
+        //std::cout << "OList unique size: " << s.size() << std::endl;
     }
+
+    std::cout << "Backwards phase done. RESULT: " << std::endl;
+    printmap(probs_bw_out);
 
     std::unordered_set<state_t,state_hash> backwards_list(std::make_move_iterator(OList.begin()),std::make_move_iterator(OList.end()));
 
@@ -335,92 +387,80 @@ bool valid_mitm(const state_t key, state_t BPmask) {
     state_t initial_state = original_input;
     SBTopt::bitpermutation(initial_state);
     OList.push_back(initial_state);
-    probs_fw[initial_state] = 1;
+    probs_fw_out[initial_state] = 1;
 
     BPmask = original_BPmask;
-    std::map<state_t, double> output_probs = probs_bw;
-        std::map<state_t, double> input_probs;
-        input_probs.clear();
-        //output_probs = probs_bw;
+    
+    //std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_out.size() << std::endl;
+    //std::cout << "same keys? " << mapeqlist(probs_fw_out, OList) << std::endl;
+
+    //output_probs = probs_bw;
+
     for (int round = 0; round < 4 ; ++round){
         std::cout << "Round " << round << std::endl;
         state_t control = SBTopt::control_Nr_Gr(round, key, original_input);
 
-        std::map<state_t, double> output_probs = probs_bw;
-        std::map<state_t, double> input_probs;
-        input_probs.clear();
+        std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_out.size() << std::endl;
 
+        std::cout << "same keys? " << mapeqlist(probs_fw_out, OList) << std::endl;
         // grid permutation
         for (int n = 0; n < 16; ++n)       
         {
             int pos = n^1;
             if (BPmask.getnibble(pos) == 0) continue; 
             
-            output_probs.clear();
+            probs_fw_in.swap(probs_fw_out);
+            probs_fw_out.clear();
 
             IList.swap(OList);
             OList.clear();
+
             for (const state_t& input : IList){
                 state_t val = input;
-                state_t temp_input = input;
-                auto temp_prob = input_probs[temp_input];
+                auto input_prob = probs_fw_in[input];
 
                 // uses function: bool extcrumbused = partial_grid_permutation(output, pos, BP_mask, extcrumb, control)
                 // which modifies output (in place) and returns true if it needed the crumb value and that was outside the BP_mask
                 bool extcrumbused = SBTopt::partial_grid_permutation(val, n, BPmask, 0, control);
                 state_t output = val.u64 & BPmask.u64;
-                OList.push_back(output);
+
                 if (extcrumbused == 0) {
-                    if (output_probs.contains(output)) {
-                        output_probs[output] += temp_prob;
-                    }
-                    else {
-                        output_probs[output] = temp_prob;
-                    }
+                    OList.push_back(output);
+                    probs_fw_out[output] += input_prob;
                     //temp_probs = change_keymap(temp_probs, temp_input, output);
-                    std::cout << "continue" << std::endl;
+                    //std::cout << "continue" << std::endl;
                     continue;
                 }
 
-                probs_fw[output] += temp_prob/4;
+                OList.push_back(output);
+                probs_fw_out[output] += input_prob / 4.;
 
                 val = input;
                 SBTopt::partial_grid_permutation(val, n, BPmask, 1, control);
                 output = val.u64 & BPmask.u64;
                 OList.push_back(output);
-                if (output_probs.contains(output)) {
-                    output_probs[output] += temp_prob / 4;
-                }
-                else {
-                    output_probs[output] = temp_prob / 4;
-                }
+                probs_fw_out[output] += input_prob / 4.;
 
                 val = input;
                 SBTopt::partial_grid_permutation(val, n, BPmask, 2, control);
                 output = val.u64 & BPmask.u64;
                 OList.push_back(output);
-                if (output_probs.contains(output)) {
-                    output_probs[output] += temp_prob / 4;
-                }
-                else {
-                    output_probs[output] = temp_prob / 4;
-                }
+                probs_fw_out[output] += input_prob / 4.;
 
                 val = input;
                 SBTopt::partial_grid_permutation(val, n, BPmask, 3, control);
                 output = val.u64 & BPmask.u64;
                 OList.push_back(output);
-                if (output_probs.contains(output)) {
-                    output_probs[output] += temp_prob / 4;
-                }
-                else {
-                    output_probs[output] = temp_prob / 4;
-                }
-
-                probs_fw.erase(input);
-
+                probs_fw_out[output] += input_prob / 4.;
                 }
         }
+
+        std::cout << "Grid Permutation Done" << std::endl;
+        std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_out.size() << std::endl;
+        std::cout << "same keys? " << mapeqlist(probs_fw_out, OList) << std::endl;
+
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_in.size() << std::endl;
+        //std::cout << "same keys? " << mapeqlist(probs_fw_in, OList) << std::endl;
 
         if (round == 2 || round == 4 || round == 6)
         {
@@ -434,59 +474,89 @@ bool valid_mitm(const state_t key, state_t BPmask) {
                 OList.emplace_back(val);
         }
         
+        //std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_in.size() << std::endl;
+        //std::cout << "same keys? " << mapeqlist(probs_fw_in, OList) << std::endl;
         
         //Byte permutation
         SBTopt::bytepermutation(BPmask);
         
+        probs_fw_in.swap(probs_fw_out);
+        probs_fw_out.clear();
+
         IList.swap(OList);
         OList.clear();
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_fw_in[input];
             SBTopt::bytepermutation(input);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output.u64);
-            probs_fw = change_keymap(probs_fw, temp_input, output);
+            probs_fw_out[output] += input_prob;
         }
         
         //Nibble switch
         IList.swap(OList);
         OList.clear();
+
+        probs_fw_in.swap(probs_fw_out);
+        probs_fw_out.clear();
+
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_fw_in[input];
             SBTopt::nibbleswitch(input, control);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output);
-            probs_fw = change_keymap(probs_fw, temp_input, output);
+            probs_fw_out[output] += input_prob;
         }
         
         //S boxes
         IList.swap(OList);
         OList.clear();
+
+        probs_fw_in.swap(probs_fw_out);
+        probs_fw_out.clear();
+
         for (state_t input : IList){
-            auto temp_input = input;
+            auto input_prob = probs_fw_in[input];
             SBTopt::sbox(input);
             state_t output = input.u64 & BPmask.u64;
             OList.push_back(output);
-            probs_fw = change_keymap(probs_fw, temp_input, output);
+            probs_fw_out[output] += input_prob;
         }
         
+        
+        std::cout << "*****END OF ROUND*****" << std::endl;
+        std::cout << "OList size: " << OList.size() << " probs size: " << probs_fw_out.size() << std::endl;
+        std::cout << "same keys? " << mapeqlist(probs_fw_out, OList) << std::endl;
+
+        //printmap(probs_bw);
+        //printvec(OList);
+        //std::set<state_t> s(OList.begin(), OList.end());
+        //OList.assign(s.begin(), s.end());
+        //std::cout << "OList unique size: " << s.size() << std::endl;
+
     }
+
+    std::cout << "FINAL MAPS" << std::endl;
+    //printmap(probs_bw_in);
+    printmap(probs_bw_out);
+    //printmap(probs_fw_in);
+    printmap(probs_fw_out);
 
     double p = 0;
 
-    for (auto fw : probs_fw) {
-        for (auto bw : probs_bw) {
+    /*for (auto fw : probs_fw_out) {
+        for (auto bw : probs_bw_out) {
             if (fw.first == bw.first && fw.second != 0 && bw.second != 0) {
                 p += fw.second * bw.second;
             }
         }
-    }
+    }*/
     
 
-    /*if (p > 0.1) {
+    if (1) {
         int weight = hammingweight(key.u64 ^ original_key.u64);
         std::cout << "Key:    " << key << " Probability: " << std::left << std::setw(8) << p << " Hamming distance: " << weight << std::endl;
-    }*/
+    }
     
     /*if (myfile.is_open())
     {

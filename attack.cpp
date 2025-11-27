@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_set>
 #include <iomanip>
+#include <random>
+#include <thread>
 
 namespace po = program_options;
 
@@ -602,7 +604,15 @@ multiple error */; return ; }
 
 }
 
-int main(int argc, char** argv){
+int main(int argc, char** argv) {
+    //-i 7913287333904857843 -k 16779657253290007  -l 268435455
+    std::random_device rd;
+    //std::seed_seq seed{ rd(), rd(), rd(), rd() };
+    std::seed_seq seed{ 1, 2, 3, 4 };
+    std::mt19937_64 rng(seed);
+
+    unsigned kb_strategy;
+    unsigned threads = 0;
 
 	po::options_description opts("Command line options");
 	opts.add_options()
@@ -611,6 +621,11 @@ int main(int argc, char** argv){
 		("key,k", po::value<std::uint64_t>(&original_key.u64), "Provide key (to compute output block)")
 		("knownkeybitmask,l", po::value<std::uint64_t>(&key_known_bits_mask.u64)->default_value(0), "Leak key bits to attack")
 		("output,o", po::value<std::uint64_t>(&original_output.u64), "Provide output block")
+        ("rndin", "Generate input block at random")
+        ("rndout", "Generate output block at random")
+        ("rndkey", "Generate key at random, and compute output")
+        //("strategy", po::value<unsigned>(&kb_strategy)->default_value(0), "Strategy to derive key bit order: 0")
+        //("threads,t", po::value<unsigned>(&threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use (0 = automatic)")
 		;
 	po::variables_map vm;
 	// parse command line
@@ -618,15 +633,36 @@ int main(int argc, char** argv){
 	// set default values if option was not given, and store arguments in variables
 	po::notify(vm);
 
-	if (vm.count("help") || vm.count("input")==0 || vm.count("key")+vm.count("output")==0)
+	if (vm.count("help") || vm.count("key") + vm.count("rndkey") + vm.count("output") + vm.count("rndout") != 1)
 	{
 		po::print_options_description({opts}); // add other opts as desired in list
 		return 0;
 	}
-	if (vm.count("output")==0)
-	{
-	    original_output = SBTopt::SBT_cipher(original_key, original_input);
-	}
+
+    if (vm.count("rndout"))
+        original_output = rng();
+    
+    if (vm.count("key") || vm.count("rndkey") || vm.count("rndout") + vm.count("output") == 0)
+    {
+        original_output = SBTopt::SBT_cipher(original_key, original_input);
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (computed from Key & In)" << std::endl;
+    }
+    else if (vm.count("rndout"))
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (randomly sampled)" << std::endl;
+    else
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (user parameter)" << std::endl;
+
+    if (vm.count("rndkey"))
+    {
+        original_key = rng();
+        original_key.setbyte(7, 0);
+        std::cout << "Key: " << original_key << " " << original_key.u64 << " (randomly sampled)" << std::endl;
+    }
+    else if (vm.count("key"))
+        std::cout << "Key: " << original_key << " " << original_key.u64 << " (user parameter)" << std::endl;
+    else if (vm.count("rndout") + vm.count("output") == 0)
+        std::cout << "Key: " << original_key << " " << original_key.u64 << " (none/default challenge)" << std::endl;
+
 	std::cout << "Input  :" << original_input << std::endl;
 	std::cout << "Output :" << original_output << std::endl;
 	std::cout << "Key    :" << original_key << std::endl;
@@ -642,9 +678,6 @@ int main(int argc, char** argv){
     List L8 = create_single_list(7-7);
 
     std::cout << "L1 size: " << L1.keylist.size() << std::endl;
-    for (auto w : weights) {
-        std::cout << "weight: " << w.first << " probability: " << w.second << std::endl;
-    }
     std::cout << "L2 size: " << L2.keylist.size() << std::endl;
     std::cout << "L3 size: " << L3.keylist.size() << std::endl;
     std::cout << "L4 size: " << L4.keylist.size() << std::endl;

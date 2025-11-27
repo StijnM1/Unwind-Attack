@@ -160,11 +160,9 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
         //probs 
         for (auto p : probs_bw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::sbox_inv(input);
-            state_t output = input.u64 & BPmask.u64;
-            probs_bw_out[output] += input_prob;
+            probs_bw_out[input.u64 & BPmask.u64] += p.second;
         }
 
         probs_bw_in.swap(probs_bw_out);
@@ -172,11 +170,9 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
         //nibble switch
         for (auto p : probs_bw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::nibbleswitch_inv(input, control);
-            state_t output = input.u64 & BPmask.u64;
-            probs_bw_out[output] += input_prob;
+            probs_bw_out[input.u64 & BPmask.u64] += p.second;
         }
 
         //byte permutation
@@ -186,11 +182,9 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
         probs_bw_out.clear();
 
         for (auto p : probs_bw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::bytepermutation_inv(input);
-            state_t output = input.u64 & BPmask.u64;
-            probs_bw_out[output] += input_prob;
+            probs_bw_out[input.u64 & BPmask.u64] += p.second;
         }
 
         //grid permutation
@@ -201,7 +195,6 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
             probs_bw_in.swap(probs_bw_out);
             probs_bw_out.clear();
-
 
             for (auto input : probs_bw_in) {
                 state_t val = input.first;
@@ -221,18 +214,15 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 1, control);
-                output = val.u64 & BPmask.u64;
-                probs_bw_out[output] += input_prob / 4.;
+                probs_bw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 2, control);
-                output = val.u64 & BPmask.u64;
-                probs_bw_out[output] += input_prob / 4.;
+                probs_bw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 3, control);
-                output = val.u64 & BPmask.u64;
-                probs_bw_out[output] += input_prob / 4.;
+                probs_bw_out[val.u64 & BPmask.u64] += input_prob / 4.;
             }
         }
     }
@@ -247,8 +237,6 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
         state_t control = SBTopt::control_Nr_Gr(round, key, original_input);
 
         // grid permutation
-
-
         for (int n = 0; n <= 15; ++n)
         {
             int pos = n ^ 1;
@@ -256,7 +244,6 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
             probs_fw_in.swap(probs_fw_out);
             probs_fw_out.clear();
-
 
             for (auto input : probs_fw_in) {
                 state_t val = input.first;
@@ -276,18 +263,15 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 1, control);
-                output = val.u64 & BPmask.u64;
-                probs_fw_out[output] += input_prob / 4.;
+                probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 2, control);
-                output = val.u64 & BPmask.u64;
-                probs_fw_out[output] += input_prob / 4.;
+                probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 3, control);
-                output = val.u64 & BPmask.u64;
-                probs_fw_out[output] += input_prob / 4.;
+                probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
             }
         }
 
@@ -298,24 +282,19 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
         probs_fw_out.clear();
 
         for (auto p : probs_fw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::bytepermutation(input);
-            state_t output = input.u64 & BPmask.u64;
-            probs_fw_out[output] += input_prob;
+            probs_fw_out[input.u64 & BPmask.u64] += p.second;
         }
 
         //Nibble switch
-
         probs_fw_in.swap(probs_fw_out);
         probs_fw_out.clear();
 
         for (auto p: probs_fw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::nibbleswitch(input, control);
-            state_t output = input.u64 & BPmask.u64;
-            probs_fw_out[output] += input_prob;
+            probs_fw_out[input.u64 & BPmask.u64] += p.second;
         }
 
         //S boxes
@@ -323,11 +302,9 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
         probs_fw_out.clear();
 
         for (auto p : probs_fw_in) {
-            auto input_prob = p.second;
             state_t input = p.first;
             SBTopt::sbox(input);
-            state_t output = input.u64 & BPmask.u64;
-            probs_fw_out[output] += input_prob;
+            probs_fw_out[input.u64 & BPmask.u64] += p.second;
         }
 
     }

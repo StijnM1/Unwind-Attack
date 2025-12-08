@@ -552,9 +552,9 @@ List create_single_list(const int& byte_path_number) {
 
 
 
-std::vector<std::map<state_t, double>> create_single_table(const int& byte_path_number) {
+std::map<state_t, double> create_single_table(const int& byte_path_number) {
     
-    std::vector<std::map<state_t, double>> table(256);
+    std::map<state_t, double> table;
 
     List list;
 
@@ -581,20 +581,9 @@ std::vector<std::map<state_t, double>> create_single_table(const int& byte_path_
 
         double p = valid_mitm_probs(z, list.BPmask);
 
-        if (p > 0) {
-            int byteval = 0;
+        if (p > 0)
+            table[z] = p;
 
-            // is below this neccessary? Also could be optimized
-            state_t output = SBTopt::SBT_cipher(z, original_input).u64 & list.BPmask.u64;
-            
-            int i = 0;
-            while (byteval == 0){
-                int byteval = output.getbyte(i);
-                i++;
-            }
-            table[byteval][z] = p;
-
-        }
         std::cout << p << std::endl;
     } while (z != 0);
 

@@ -18,7 +18,7 @@ state_t original_key; // for testing purposes the actual true key
 
 state_t key_known_bits_mask; // mask to limit the key search space
 
-std::ofstream myfile("output.txt");
+//std::ofstream myfile("output.txt");
 
 std::map<int, double> weights;
 
@@ -49,17 +49,17 @@ double check_probs(std::map<state_t, double> probs) {
     return total;
 }
 
-bool mapeqlist(std::map<state_t, double> probs, std::vector<state_t> vec) {
-    std::set<state_t> s(vec.begin(), vec.end());
-    vec.assign(s.begin(), s.end());
-    
-    if (probs.size() != s.size()) { return false; }
-    for (state_t p : s) {
-        if (probs.contains(p)) { continue; }
-        else { return false; }
-    }
-    return true;
-}
+//bool mapeqlist(std::map<state_t, double> probs, std::vector<state_t> vec) {
+//    std::set<state_t> s(vec.begin(), vec.end());
+//    vec.assign(s.begin(), s.end());
+//    
+//    if (probs.size() != s.size()) { return false; }
+//    for (state_t p : s) {
+//        if (probs.contains(p)) { continue; }
+//        else { return false; }
+//    }
+//    return true;
+//}
 
 void printmap(const std::map<state_t, double> map) {
     std::cout << "-----PRINTING MAP-----" << std::endl;
@@ -141,7 +141,7 @@ void apply_key_mask(List& list){
     }
 }
 
-bool valid_mitm_probs(const state_t key, state_t BPmask) {
+double valid_mitm_probs(const state_t key, state_t BPmask) {
     state_t original_BPmask = BPmask;
 
     // create backwards list first
@@ -159,6 +159,8 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
         probs_bw_in.swap(probs_bw_out);
         probs_bw_out.clear();
+
+        //can add a bpmask here? for optimization. or bpmask as input of sbox
 
         //probs 
         for (auto p : probs_bw_in) {
@@ -311,17 +313,17 @@ bool valid_mitm_probs(const state_t key, state_t BPmask) {
 
     }
 
-    double prob = 0;
+    double p = 0;
 
     for (auto fw : probs_fw_out) {
             for (auto bw : probs_bw_out) {
                 if (fw.first == bw.first) {
-                    prob += fw.second * bw.second;
+                    p += fw.second * bw.second;
                 }
             }
         }
 
-    return (prob > 0);
+    return p;
 }
 
 
@@ -517,9 +519,9 @@ bool valid_mitm(const state_t key, state_t BPmask) {
         return false;
     }
 
-List create_single_list(const int& byte_path_number){
+List create_single_list(const int& byte_path_number) {
     List list;
-    
+
     //create byte path mask
     list.BPmask.u64 = 0;
     list.BPmask.setbyte(byte_path_number, 255);
@@ -530,23 +532,73 @@ List create_single_list(const int& byte_path_number){
     //create keylist
     uint64_t z = 0;
 
-    std::map<int, double> weights;
-    
-    do{
-            --z;
-            z &= list.keymask.u64;
+    do {
+        --z;
+        z &= list.keymask.u64;
 
-            if (!check_key_mask(z, list.keymask))
-            {continue;}
-            
-            if (valid_mitm(z, list.BPmask)){
-                list.keylist.push_back(z);
-            };
+        if (!check_key_mask(z, list.keymask))
+        {
+            continue;
+        }
 
-    }
-    while (z != 0);
-    
+        if (valid_mitm(z, list.BPmask)) {
+            list.keylist.push_back(z);
+        };
+
+    } while (z != 0);
+
     return list;
+}
+
+
+
+std::vector<std::map<state_t, double>> create_single_table(const int& byte_path_number) {
+    
+    std::vector<std::map<state_t, double>> table(256);
+
+    List list;
+
+    //create byte path mask
+    list.BPmask.u64 = 0;
+    list.BPmask.setbyte(byte_path_number, 255);
+
+    //create keymask
+    list.keymask = SBTopt::determine_keymask(list.BPmask);
+
+    //create keylist
+    uint64_t z = 0;
+
+    std::map<state_t, double> probs;
+    std::map<state_t, double> keyprobs;
+
+    std::map<int, double> weights;
+
+    do {
+        --z;
+        z &= list.keymask.u64;
+
+        if (!check_key_mask(z, list.keymask)){continue;}
+
+        double p = valid_mitm_probs(z, list.BPmask);
+
+        if (p > 0) {
+            int byteval = 0;
+
+            // is below this neccessary? Also could be optimized
+            state_t output = SBTopt::SBT_cipher(z, original_input).u64 & list.BPmask.u64;
+            
+            int i = 0;
+            while (byteval == 0){
+                int byteval = output.getbyte(i);
+                i++;
+            }
+            table[byteval][z] = p;
+
+        }
+        std::cout << p << std::endl;
+    } while (z != 0);
+
+    return table;
 }
 
 List combine_lists(const List& list_a, const List& list_b, std::map<state_t, double> probs){
@@ -611,46 +663,67 @@ int main(int argc, char** argv) {
     std::seed_seq seed{ 1, 2, 3, 4 };
     std::mt19937_64 rng(seed);
 
+    state_t original_key(0);
+    state_t original_input(0);
+    state_t fill(0);
+    state_t original_output = SBTopt::SBT_cipher(original_key, original_input);
     unsigned kb_strategy;
     unsigned threads = 0;
 
 	po::options_description opts("Command line options");
 	opts.add_options()
-		("help,h", "Show options") // short option & long option
-		("input,i", po::value<std::uint64_t>(&original_input.u64), "Provide input block")
-		("key,k", po::value<std::uint64_t>(&original_key.u64), "Provide key (to compute output block)")
-		("knownkeybitmask,l", po::value<std::uint64_t>(&key_known_bits_mask.u64)->default_value(0), "Leak key bits to attack")
-		("output,o", po::value<std::uint64_t>(&original_output.u64), "Provide output block")
+		("help,h", "Show options")
+        ("input,i", po::value<std::uint64_t>(&original_input.u64), "Input block (default is SBT's fixed first input block)")
+        ("fill,f", po::value<std::uint64_t>(&fill.u64), "Initial Fill: input block <- lfsr64(fill))")
+        ("output,o", po::value<std::uint64_t>(&original_output.u64), "Output block")
+        ("key,k", po::value<std::uint64_t>(&original_key.u64), "Key to compute output (if given)")
         ("rndin", "Generate input block at random")
         ("rndout", "Generate output block at random")
         ("rndkey", "Generate key at random, and compute output")
-        //("strategy", po::value<unsigned>(&kb_strategy)->default_value(0), "Strategy to derive key bit order: 0")
-        //("threads,t", po::value<unsigned>(&threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use (0 = automatic)")
-		;
+        ("strategy", po::value<unsigned>(&kb_strategy)->default_value(0), "Strategy to derive key bit order: 0")
+        ("threads,t", po::value<unsigned>(&threads)->default_value( std::thread::hardware_concurrency() ), "Number of threads to use (0 = automatic)")
+        ;
 	po::variables_map vm;
 	// parse command line
 	po::store(po::parse_command_line(argc, argv, opts, false, false), vm);
+
 	// set default values if option was not given, and store arguments in variables
 	po::notify(vm);
 
-	if (vm.count("help") || vm.count("key") + vm.count("rndkey") + vm.count("output") + vm.count("rndout") != 1)
-	{
-		po::print_options_description({opts}); // add other opts as desired in list
-		return 0;
-	}
-
-    if (vm.count("rndout"))
-        original_output = rng();
-    
-    if (vm.count("key") || vm.count("rndkey") || vm.count("rndout") + vm.count("output") == 0)
+    if (vm.count("help") || vm.count("key") + vm.count("rndkey") + vm.count("output") + vm.count("rndout") != 1)
     {
-        original_output = SBTopt::SBT_cipher(original_key, original_input);
-        std::cout << "Out: " << original_output << " " << original_output.u64 << " (computed from Key & In)" << std::endl;
+        po::print_options_description({ opts });
+        if (vm.count("key") + vm.count("rndkey") + vm.count("output") + vm.count("rndout") != 1)
+            std::cout << "Error: pass exactly one of: --key, --rndkey, --output, --rndout" << std::endl;
+        return 0;
     }
-    else if (vm.count("rndout"))
-        std::cout << "Out: " << original_output << " " << original_output.u64 << " (randomly sampled)" << std::endl;
+
+    if (vm.count("rndin"))
+    {
+        original_input = rng();
+        std::cout << "In : " << original_input << " " << original_input.u64 << " (randomly sampled)" << std::endl;
+    }
+    else if (vm.count("input"))
+    {
+        std::cout << "In : " << original_input << " " << original_input.u64 << " (user input)" << std::endl;
+    }
+    else if (vm.count("fill"))
+    {
+        original_input = fill;
+        SBTopt::lfsr64(original_input);
+        std::cout << "In : " << original_input << " " << original_input.u64 << " (user fill, lfsr64'ed)" << std::endl;
+    }
     else
-        std::cout << "Out: " << original_output << " " << original_output.u64 << " (user parameter)" << std::endl;
+    {
+        // default initial fill
+        original_input = SBTopt::initial_fill();
+        SBTopt::lfsr64(original_input);
+        std::cout << "In : " << original_input << " " << original_input.u64 << " (default: SBT's fixed 1st input)" << std::endl;
+    }
+    state_t tmpin = original_input;
+    SBTopt::bitpermutation(tmpin);
+    std::cout << "RS0: " << tmpin << " " << tmpin.u64 << " (SBT round 0 input)" << std::endl;
+
 
     if (vm.count("rndkey"))
     {
@@ -663,28 +736,45 @@ int main(int argc, char** argv) {
     else if (vm.count("rndout") + vm.count("output") == 0)
         std::cout << "Key: " << original_key << " " << original_key.u64 << " (none/default challenge)" << std::endl;
 
-	std::cout << "Input  :" << original_input << std::endl;
-	std::cout << "Output :" << original_output << std::endl;
-	std::cout << "Key    :" << original_key << std::endl;
-	std::cout << "KeyLeak:" << key_known_bits_mask << std::endl;
+    if (vm.count("rndout"))
+        original_output = rng();
+    if (vm.count("key") || vm.count("rndkey") || vm.count("rndout") + vm.count("output") == 0)
+    {
+        original_output = SBTopt::SBT_cipher(original_key, original_input);
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (computed from Key & In)" << std::endl;
+    }
+    else if (vm.count("rndout"))
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (randomly sampled)" << std::endl;
+    else
+        std::cout << "Out: " << original_output << " " << original_output.u64 << " (user parameter)" << std::endl;
+    
 
-    List L1 = create_single_list(7-0);
-    List L2 = create_single_list(7-1);
-    List L3 = create_single_list(7-2);
-    List L4 = create_single_list(7-3);
-    List L5 = create_single_list(7-4);
-    List L6 = create_single_list(7-5);
-    List L7 = create_single_list(7-6);
-    List L8 = create_single_list(7-7);
+    std::vector<std::map<state_t, double>> table = create_single_table(7);
 
-    std::cout << "L1 size: " << L1.keylist.size() << std::endl;
-    std::cout << "L2 size: " << L2.keylist.size() << std::endl;
-    std::cout << "L3 size: " << L3.keylist.size() << std::endl;
-    std::cout << "L4 size: " << L4.keylist.size() << std::endl;
-    std::cout << "L5 size: " << L5.keylist.size() << std::endl;
-    std::cout << "L6 size: " << L6.keylist.size() << std::endl;
-    std::cout << "L7 size: " << L7.keylist.size() << std::endl;
-    std::cout << "L8 size: " << L8.keylist.size() << std::endl;/*
+    for (auto i : table) {
+        printmap(i);
+    }
+
+    //List L1 = create_single_list(7-0);
+    //List L2 = create_single_list(7-1);
+    //List L3 = create_single_list(7-2);
+    //List L4 = create_single_list(7-3);
+    //List L5 = create_single_list(7-4);
+    //List L6 = create_single_list(7-5);
+    //List L7 = create_single_list(7-6);
+    //List L8 = create_single_list(7-7);
+
+    //std::cout << "L1 size: " << L1.keylist.size() << std::endl;
+    //std::cout << "L2 size: " << L2.keylist.size() << std::endl;
+    //std::cout << "L3 size: " << L3.keylist.size() << std::endl;
+    //std::cout << "L4 size: " << L4.keylist.size() << std::endl;
+    //std::cout << "L5 size: " << L5.keylist.size() << std::endl;
+    //std::cout << "L6 size: " << L6.keylist.size() << std::endl;
+    //std::cout << "L7 size: " << L7.keylist.size() << std::endl;
+    //std::cout << "L8 size: " << L8.keylist.size() << std::endl;
+    
+    
+    /*
 
     List L67 = combine_lists(L6, L7, probs);
     std::cout << "L67 size: " << L67.keylist.size() << std::endl;
@@ -710,6 +800,6 @@ int main(int argc, char** argv) {
     std::cout << "Computed key: ";
     printvec(L12345678.keylist);
     std::cout << "Original key: " << original_key << std::endl;*/
-    myfile.close();
+    //myfile.close();
     return 0;
 };

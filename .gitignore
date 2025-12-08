@@ -8,3 +8,5 @@
 /vs/x64/Debug
 /vs/attack.vcxproj.user
 /vs/attack.vcxproj.filters
+/vs/attack/x64/Release
+/vs/x64/Release

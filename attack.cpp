@@ -584,7 +584,7 @@ std::map<state_t, double> create_single_table(const int& byte_path_number) {
         if (p > 0)
             table[z] = p;
 
-        std::cout << p << std::endl;
+        //std::cout << p << std::endl;
     } while (z != 0);
 
     return table;
@@ -738,11 +738,10 @@ int main(int argc, char** argv) {
         std::cout << "Out: " << original_output << " " << original_output.u64 << " (user parameter)" << std::endl;
     
 
-    std::vector<std::map<state_t, double>> table = create_single_table(7);
+    std::map<state_t, double> table = create_single_table(7);
 
-    for (auto i : table) {
-        printmap(i);
-    }
+    printmap(table);
+    
 
     //List L1 = create_single_list(7-0);
     //List L2 = create_single_list(7-1);

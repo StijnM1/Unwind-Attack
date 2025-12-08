@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 using namespace std::string_literals;
 
@@ -237,6 +238,14 @@ public:
     }
 
     std::uint64_t u64;
+};
+
+template<>
+struct std::hash<state_t> {
+    std::size_t operator()(const state_t& k) const
+    {
+        return std::hash<std::uint64_t>()(k.u64);
+    }
 };
 
 std::ostream& operator<<(std::ostream& o, const state_t& s)

@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <random>
 #include <thread>
+#include <unordered_map>
 
 namespace po = program_options;
 
@@ -147,10 +148,13 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
     // create backwards list first
     state_t initial_output_state = original_output;
 
-    std::map<state_t, double> probs_fw_in;
-    std::map<state_t, double> probs_fw_out;
-    std::map<state_t, double> probs_bw_in;
-    std::map<state_t, double> probs_bw_out;
+    //typedef std::unordered_map<state_t, double> map_t;
+    typedef std::map<state_t, double> map_t;
+
+    map_t probs_fw_in;
+    map_t probs_fw_out;
+    map_t probs_bw_in;
+    map_t probs_bw_out;
 
     probs_bw_out[initial_output_state] = 1;
 
@@ -316,12 +320,12 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
     double p = 0;
 
     for (auto fw : probs_fw_out) {
-            for (auto bw : probs_bw_out) {
-                if (fw.first == bw.first) {
-                    p += fw.second * bw.second;
-                }
-            }
-        }
+        auto it = probs_bw_out.find(fw.first);
+        if (it == probs_bw_out.end())
+            continue;
+        p += fw.second * it->second;
+
+    }
 
     return p;
 }

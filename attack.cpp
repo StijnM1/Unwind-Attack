@@ -162,7 +162,6 @@ void apply_key_mask(List& list){
 
 double valid_mitm_probs(const state_t key, state_t BPmask) {
     state_t original_BPmask = BPmask;
-
     // create backwards list first
     state_t initial_output_state = original_output;
 
@@ -639,10 +638,10 @@ int main(int argc, char** argv) {
     //std::seed_seq seed{ 1, 2, 3, 4 };
     std::mt19937_64 rng(seed);
 
-    state_t original_key(0);
-    state_t original_input(0);
+    original_key;
+    original_input;
     state_t fill(0);
-    state_t original_output = SBTopt::SBT_cipher(original_key, original_input);
+    original_output = SBTopt::SBT_cipher(original_key, original_input);
     unsigned kb_strategy;
     unsigned threads = 0;
 

@@ -638,8 +638,6 @@ int main(int argc, char** argv) {
     //std::seed_seq seed{ 1, 2, 3, 4 };
     std::mt19937_64 rng(seed);
 
-    original_key;
-    original_input;
     state_t fill(0);
     original_output = SBTopt::SBT_cipher(original_key, original_input);
     unsigned kb_strategy;

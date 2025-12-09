@@ -9,6 +9,7 @@
 #include <random>
 #include <thread>
 #include <unordered_map>
+#include <algorithm>
 
 namespace po = program_options;
 
@@ -49,6 +50,13 @@ double check_probs(std::map<state_t, double> probs) {
     }
     return total;
 }
+double check_probs(std::multimap<double,state_t> probs) {
+    double total = 0;
+    for (const auto& val : probs) {
+        total += val.first;
+    }
+    return total;
+}
 
 //bool mapeqlist(std::map<state_t, double> probs, std::vector<state_t> vec) {
 //    std::set<state_t> s(vec.begin(), vec.end());
@@ -67,8 +75,18 @@ void printmap(const std::map<state_t, double> map) {
     std::cout << "Map probability: " << check_probs(map) << std::endl;
     for (auto p : map)
     {
-        if (p.second < 0) { continue; }
+        if (p.first <= 0) { continue; }
         std::cout << p.first << p.second << ' ' << std::endl;
+    }
+    std::cout << "------END OF MAP------" << std::endl;
+};
+void printmap(const std::multimap<double,state_t> map) {
+    std::cout << "-----PRINTING MAP-----" << std::endl;
+    std::cout << "Map probability: " << check_probs(map) << std::endl;
+    for (auto p : map)
+    {
+        if (p.first <= 0) { continue; }
+        std::cout << p.first << ": " << p.second << std::endl;
     }
     std::cout << "------END OF MAP------" << std::endl;
 };
@@ -148,15 +166,15 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
     // create backwards list first
     state_t initial_output_state = original_output;
 
-    //typedef std::unordered_map<state_t, double> map_t;
-    typedef std::map<state_t, double> map_t;
+    typedef std::unordered_map<state_t, double> map_t;
+    //typedef std::map<state_t, double> map_t;
 
     map_t probs_fw_in;
     map_t probs_fw_out;
     map_t probs_bw_in;
     map_t probs_bw_out;
 
-    probs_bw_out[initial_output_state] = 1;
+    probs_bw_out[ initial_output_state.u64 & BPmask.u64 ] = 1;
 
     for (int round = 7; round > 3; --round) {
         state_t control = SBTopt::control_Nr_Gr(round, key, original_input);
@@ -164,34 +182,15 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
         probs_bw_in.swap(probs_bw_out);
         probs_bw_out.clear();
 
-        //can add a bpmask here? for optimization. or bpmask as input of sbox
-
-        //probs 
-        for (auto p : probs_bw_in) {
-            state_t input = p.first;
-            SBTopt::sbox_inv(input);
-            probs_bw_out[input.u64 & BPmask.u64] += p.second;
-        }
-
-        probs_bw_in.swap(probs_bw_out);
-        probs_bw_out.clear();
-
-        //nibble switch
-        for (auto p : probs_bw_in) {
-            state_t input = p.first;
-            SBTopt::nibbleswitch_inv(input, control);
-            probs_bw_out[input.u64 & BPmask.u64] += p.second;
-        }
-
-        //byte permutation
         SBTopt::bytepermutation_inv(BPmask);
 
-        probs_bw_in.swap(probs_bw_out);
-        probs_bw_out.clear();
-
-        for (auto p : probs_bw_in) {
+        for (const auto& p : probs_bw_in) {
             state_t input = p.first;
+
+            SBTopt::sbox_inv(input);
+            SBTopt::nibbleswitch_inv(input, control);
             SBTopt::bytepermutation_inv(input);
+
             probs_bw_out[input.u64 & BPmask.u64] += p.second;
         }
 
@@ -204,21 +203,21 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
             probs_bw_in.swap(probs_bw_out);
             probs_bw_out.clear();
 
-            for (auto input : probs_bw_in) {
+            for (const auto& input : probs_bw_in) {
                 state_t val = input.first;
                 auto input_prob = input.second;
 
                 // uses function: bool extcrumbused = partial_grid_permutation(output, pos, BP_mask, extcrumb, control)
                 // which modifies output (in place) and returns true if it needed the crumb value and that was outside the BP_mask
                 bool extcrumbused = SBTopt::partial_grid_permutation_inv(val, n, BPmask, 0, control);
-                state_t output = val.u64 & BPmask.u64;
+                val.u64 &= BPmask.u64;
 
-                if (extcrumbused == 0) {
-                    probs_bw_out[output] += input_prob;
+                if (extcrumbused == false) {
+                    probs_bw_out[val] += input_prob;
                     continue;
                 }
 
-                probs_bw_out[output] += input_prob / 4.;
+                probs_bw_out[val] += input_prob / 4.;
 
                 val = input.first;
                 SBTopt::partial_grid_permutation_inv(val, n, BPmask, 1, control);
@@ -235,11 +234,11 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
         }
     }
 
+    BPmask = original_BPmask;
+
     state_t initial_state = original_input;
     SBTopt::bitpermutation(initial_state);
-    probs_fw_out[initial_state] = 1;
-
-    BPmask = original_BPmask;
+    probs_fw_out[initial_state.u64 & BPmask.u64] = 1;
 
     for (int round = 0; round < 4; ++round) {
         state_t control = SBTopt::control_Nr_Gr(round, key, original_input);
@@ -253,32 +252,32 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
             probs_fw_in.swap(probs_fw_out);
             probs_fw_out.clear();
 
-            for (auto input : probs_fw_in) {
+            for (const auto& input : probs_fw_in) {
                 state_t val = input.first;
                 auto input_prob = input.second;
 
                 // uses function: bool extcrumbused = partial_grid_permutation(output, pos, BP_mask, extcrumb, control)
                 // which modifies output (in place) and returns true if it needed the crumb value and that was outside the BP_mask
-                bool extcrumbused = SBTopt::partial_grid_permutation_inv(val, n, BPmask, 0, control);
-                state_t output = val.u64 & BPmask.u64;
+                bool extcrumbused = SBTopt::partial_grid_permutation(val, n, BPmask, 0, control);
+                val.u64 &= BPmask.u64;
 
-                if (extcrumbused == 0) {
-                    probs_fw_out[output] += input_prob;
+                if (extcrumbused == false) {
+                    probs_fw_out[val] += input_prob;
                     continue;
                 }
 
-                probs_fw_out[output] += input_prob / 4.;
+                probs_fw_out[val] += input_prob / 4.;
 
                 val = input.first;
-                SBTopt::partial_grid_permutation_inv(val, n, BPmask, 1, control);
+                SBTopt::partial_grid_permutation(val, n, BPmask, 1, control);
                 probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
-                SBTopt::partial_grid_permutation_inv(val, n, BPmask, 2, control);
+                SBTopt::partial_grid_permutation(val, n, BPmask, 2, control);
                 probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
 
                 val = input.first;
-                SBTopt::partial_grid_permutation_inv(val, n, BPmask, 3, control);
+                SBTopt::partial_grid_permutation(val, n, BPmask, 3, control);
                 probs_fw_out[val.u64 & BPmask.u64] += input_prob / 4.;
             }
         }
@@ -289,29 +288,13 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
         probs_fw_in.swap(probs_fw_out);
         probs_fw_out.clear();
 
-        for (auto p : probs_fw_in) {
+        for (const auto& p : probs_fw_in) {
             state_t input = p.first;
+
             SBTopt::bytepermutation(input);
-            probs_fw_out[input.u64 & BPmask.u64] += p.second;
-        }
-
-        //Nibble switch
-        probs_fw_in.swap(probs_fw_out);
-        probs_fw_out.clear();
-
-        for (auto p: probs_fw_in) {
-            state_t input = p.first;
             SBTopt::nibbleswitch(input, control);
-            probs_fw_out[input.u64 & BPmask.u64] += p.second;
-        }
-
-        //S boxes
-        probs_fw_in.swap(probs_fw_out);
-        probs_fw_out.clear();
-
-        for (auto p : probs_fw_in) {
-            state_t input = p.first;
             SBTopt::sbox(input);
+
             probs_fw_out[input.u64 & BPmask.u64] += p.second;
         }
 
@@ -319,14 +302,12 @@ double valid_mitm_probs(const state_t key, state_t BPmask) {
 
     double p = 0;
 
-    for (auto fw : probs_fw_out) {
+    for (const auto& fw : probs_fw_out)
+    {
         auto it = probs_bw_out.find(fw.first);
-        if (it == probs_bw_out.end())
-            continue;
-        p += fw.second * it->second;
-
+        if (it != probs_bw_out.end())
+           p += fw.second * it->second;
     }
-
     return p;
 }
 
@@ -556,9 +537,9 @@ List create_single_list(const int& byte_path_number) {
 
 
 
-std::map<state_t, double> create_single_table(const int& byte_path_number) {
-    
-    std::map<state_t, double> table;
+std::vector< std::pair<state_t, double> > create_single_table(const int& byte_path_number)
+{
+    std::vector< std::pair<state_t, double> > table;
 
     List list;
 
@@ -585,8 +566,8 @@ std::map<state_t, double> create_single_table(const int& byte_path_number) {
 
         double p = valid_mitm_probs(z, list.BPmask);
 
-        if (p > 0)
-            table[z] = p;
+//        if (p > 0)
+          table.emplace_back(z, p);
 
         //std::cout << p << std::endl;
     } while (z != 0);
@@ -602,9 +583,11 @@ List combine_lists(const List& list_a, const List& list_b, std::map<state_t, dou
     list_c.BPmask = list_a.BPmask.u64|list_b.BPmask.u64;
     list_c.keymask = list_a.keymask.u64|list_b.keymask.u64;
 
-    for (const state_t& partial_key : list_a.keylist) {
+    for (const state_t& partial_key : list_a.keylist)
+    {
         
-        do{
+        do
+        {
             --z;
             z &= list_b.keymask.u64&(~list_a.keymask.u64);
             state_t ext_key = z^partial_key.u64;
@@ -615,7 +598,7 @@ List combine_lists(const List& list_a, const List& list_b, std::map<state_t, dou
 
             if (valid_mitm(ext_key, list_c.BPmask)){
                 list_c.keylist.push_back(ext_key);
-        };
+            };
         }while (z != 0); // extend partial_key to all possible extended keys
     };
 
@@ -652,8 +635,8 @@ multiple error */; return ; }
 int main(int argc, char** argv) {
     //-i 7913287333904857843 -k 16779657253290007  -l 268435455
     std::random_device rd;
-    //std::seed_seq seed{ rd(), rd(), rd(), rd() };
-    std::seed_seq seed{ 1, 2, 3, 4 };
+    std::seed_seq seed{ rd(), rd(), rd(), rd() };
+    //std::seed_seq seed{ 1, 2, 3, 4 };
     std::mt19937_64 rng(seed);
 
     state_t original_key(0);
@@ -740,11 +723,30 @@ int main(int argc, char** argv) {
         std::cout << "Out: " << original_output << " " << original_output.u64 << " (randomly sampled)" << std::endl;
     else
         std::cout << "Out: " << original_output << " " << original_output.u64 << " (user parameter)" << std::endl;
+
+
     
 
-    std::map<state_t, double> table = create_single_table(7);
+    auto table = create_single_table(7-6);
+    auto table_sortkey = table;
+    auto table_sortprob = table;
+    
+    std::sort(table_sortkey.begin(), table_sortkey.end(), [](auto& l, auto& r) { return l.first < r.first; });
+    std::sort(table_sortprob.begin(), table_sortprob.end(), [](auto& l, auto& r) { return l.second > r.second; });
 
-    printmap(table);
+    state_t BPmask(0);
+    BPmask.setbyte(7-6, 255);
+    state_t partialkeymask = SBTopt::determine_keymask(BPmask);
+    state_t partialorgkey = original_key.u64 & partialkeymask.u64;
+    for (size_t i = 0; i < table_sortprob.size(); ++i)
+       if (table_sortprob[i].first == partialorgkey)
+       {
+          std::cout << "Partial org key is at pos " << i << " out of " << table_sortprob.size() << ": p=" << table_sortprob[i].second << std::endl;
+          break;
+       }
+
+
+//    printmap(table);
     
 
     //List L1 = create_single_list(7-0);
